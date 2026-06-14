@@ -16,7 +16,7 @@ void *my_malloc(size_t size){
     else if(aligend % 16 > 12){
         aligend = aligend + (16 - aligend%16) + 12;
     }
-    *(uint32_t*)p = (uint32_t)((aligend+4)>>4);
+    *(uint32_t*)p = (uint32_t)((aligend+4));
 
     void *start = sbrk(aligend);
     // 실패하면 sbrk는 (void*)(-1)을 반환하므로 NULL을 대입해야한다.
@@ -29,7 +29,7 @@ void *my_malloc(size_t size){
 void my_free(void *ptr){
     if(ptr == NULL) return;
     uint32_t *header = (uint32_t*)ptr - 1; 
-    size_t chunk = (size_t)(*header) << 4;
+    size_t chunk = (size_t)(*header);
     void *block_start  = (void*)header;
     void *block_end = (char*)block_start + chunk;
     if(block_end == sbrk(0)){
