@@ -1,20 +1,24 @@
 #include "allocator.h"
 
-
 void *my_malloc(size_t size){
     if(size==0) return NULL;
-    // 블록 시작점 16배수로 맞추기
-    void *cur = sbrk(0);
-    uintptr_t misalign = (uintptr_t)cur % 16;
-    if(misalign != 0){
-        sbrk(16-misalign);
+    size_t aligend = size; 
+    uintptr_t cur = (uintptr_t)sbrk(0);
+    uintptr_t pad = ((uintptr_t)12 - cur) & 15; // 하위 4비트만 가져오기
+    if(pad){
+        if(sbrk(pad) == (void*)(-1)) return NULL;
     }
-    void *start = NULL;
-    size_t aligend = size;
-    if (aligend % 16 != 0){
-        aligend = aligend + (16 - aligend%16);
+    void* p = sbrk(4);
+    if(p == (void*)(-1)) return NULL;
+    if (aligend % 16 < 12){
+        aligend = aligend + (12 - aligend%16);
     }
-    start = sbrk(aligend);
+    else if(aligend % 16 > 12){
+        aligend = aligend + (16 - aligend%16) + 12;
+    }
+    *(uint32_t*)p = (uint32_t)((aligend+4)>>4);
+
+    void *start = sbrk(aligend);
     // 실패하면 sbrk는 (void*)(-1)을 반환하므로 NULL을 대입해야한다.
     if(start == (void*)(-1)){
         start = NULL;
@@ -22,6 +26,13 @@ void *my_malloc(size_t size){
     return start;
 }
 
-void *my_free(void *ptr){
-    if(ptr == NULL) return NULL;
+void my_free(void *ptr){
+    if(ptr == NULL) return;
+    uint32_t *header = (uint32_t*)ptr - 1; 
+    size_t chunk = (size_t)(*header) << 4;
+    void *block_start  = (void*)header;
+    void *block_end = (char*)block_start + chunk;
+    if(block_end == sbrk(0)){
+        brk(block_end);
+    }
 }
