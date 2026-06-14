@@ -21,3 +21,7 @@ void *my_malloc(size_t size){
     }
     return start;
 }
+
+void *my_free(void *ptr){
+    if(ptr == NULL) return NULL;
+}
