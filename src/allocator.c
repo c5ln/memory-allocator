@@ -33,6 +33,6 @@ void my_free(void *ptr){
     void *block_start  = (void*)header;
     void *block_end = (char*)block_start + chunk;
     if(block_end == sbrk(0)){
-        brk(block_end);
+        brk(block_start);
     }
 }

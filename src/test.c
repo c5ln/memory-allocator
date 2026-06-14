@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "allocator.h"
 
@@ -27,5 +28,26 @@ int main(void) {
     memset(b, 'B', 64);
     for (int i = 0; i < 64; i++) assert(a[i] == 'A');  // b 쓴 게 a를 안 건드림
     printf("침범 X OK\n");
+    
+    // 오버헤드 측정
+    #define N 1000
+    size_t sizes[N];
+    size_t requested = 0;
+    uintptr_t used_before = (uintptr_t)sbrk(0);   // 측정 시작 직전 break
+    for (int i = 0; i < N; i++) {
+        sizes[i] = (size_t)(rand() % 100) + 1;    // 1~100바이트 랜덤
+        void *p = my_malloc(sizes[i]);
+        assert(p != NULL);
+        requested += sizes[i];
+    }
+    uintptr_t used = (uintptr_t)sbrk(0) - used_before;
+
+    printf("\n── 오버헤드 측정 (N=%d) ──\n", N);
+    printf("요청 합계 : %zu bytes\n", requested);
+    printf("실제 사용 : %zu bytes\n", (size_t)used);
+    printf("오버헤드  : %zu bytes (%.1f%%)\n",
+           (size_t)(used - requested),
+           100.0 * (double)(used - requested) / (double)requested);
+
     return 0;
 }
