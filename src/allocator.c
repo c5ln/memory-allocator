@@ -36,8 +36,10 @@ void *my_malloc(size_t size){
 void my_free(void *ptr){
     if(ptr == NULL) return;
     uint32_t *header = (uint32_t*)ptr - 1; 
+    if(!(*header&1)) return; // double free 방지
+    
     *header = *header & (~1u);
-
+    
     *(void**)ptr = free_head;
     free_head = (void*)header;
 }
