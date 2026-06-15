@@ -34,7 +34,7 @@ int main(void) {
     my_free(c);
     void *d = my_malloc(50);
     assert(c==d);
-    printf("재사용 OK");
+    printf("재사용 OK\n");
 
     // 재사용 후 데이터 정상
     memset(d, 0xCD, 50);
@@ -47,7 +47,7 @@ int main(void) {
     void *w = my_malloc(30);
     assert(w==z || w==y || w==x);          // 셋 중 하나 재사용
     printf("다중 free 재사용 OK\n");
-    
+
     // 오버헤드 측정
     #define N 1000
     size_t sizes[N];

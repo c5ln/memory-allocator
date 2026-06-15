@@ -15,15 +15,15 @@ void *my_malloc(size_t size){
     void **link = &free_head;
     while(*link)
     {
-        uint32_t *h = (uint32_t*)(*link);
-        size_t chunk = *h & ~15u;
-        if(chunk >= aligend+4){
-            *h |= 1;
-            void *payload = (char*)(*link) + 4;
+        uint32_t* h = (uint32_t*)(*link);
+        size_t chunk_size = *h & ~15u;
+        if(chunk_size >= aligend + 4){
+            *h = *h | 1;
+            void *payload = (char*)(*link)+4;
             *link = *(void**)payload;
             return payload;
         }
-        link = (void**)((char*)(*link)+4);
+        link = (void**)((char*)(*link) + 4);
     }
     uintptr_t cur = (uintptr_t)sbrk(0);
     uintptr_t pad = ((uintptr_t)12 - cur) & 15; // 하위 4비트만 가져오기
