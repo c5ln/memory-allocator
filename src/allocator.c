@@ -1,5 +1,7 @@
 #include "allocator.h"
 
+static void *free_head = NULL; // free list 머리
+
 void *my_malloc(size_t size){
     if(size==0) return NULL;
     size_t aligend = size; 
@@ -30,4 +32,7 @@ void my_free(void *ptr){
     if(ptr == NULL) return;
     uint32_t *header = (uint32_t*)ptr - 1; 
     *header = *header & (~1u);
+
+    *(void**)ptr = free_head;
+    free_head = (void*)header;
 }

@@ -28,7 +28,14 @@ int main(void) {
     memset(b, 'B', 64);
     for (int i = 0; i < 64; i++) assert(a[i] == 'A');  // b 쓴 게 a를 안 건드림
     printf("침범 X OK\n");
-    
+
+    // 재사용 가능한가
+    void *c = my_malloc(50);
+    my_free(a);
+    void *d = my_malloc(50);
+    assert(a==b);
+    printf("재사용 OK");
+
     // 오버헤드 측정
     #define N 1000
     size_t sizes[N];
