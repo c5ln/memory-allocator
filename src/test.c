@@ -31,11 +31,23 @@ int main(void) {
 
     // 재사용 가능한가
     void *c = my_malloc(50);
-    my_free(a);
+    my_free(c);
     void *d = my_malloc(50);
-    assert(a==b);
+    assert(c==d);
     printf("재사용 OK");
 
+    // 재사용 후 데이터 정상
+    memset(d, 0xCD, 50);
+    for(int i=0;i<50;i++) assert(((unsigned char*)d)[i]==0xCD);
+    printf("재사용 후 쓰기 OK\n");
+
+    // 여러 블록 free 후 재사용 (리스트 순회 확인)
+    void *x = my_malloc(30), *y = my_malloc(30), *z = my_malloc(30);
+    my_free(x); my_free(y); my_free(z);   // 셋 다 리스트에
+    void *w = my_malloc(30);
+    assert(w==z || w==y || w==x);          // 셋 중 하나 재사용
+    printf("다중 free 재사용 OK\n");
+    
     // 오버헤드 측정
     #define N 1000
     size_t sizes[N];
