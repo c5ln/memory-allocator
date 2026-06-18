@@ -61,12 +61,43 @@ int main(void) {
     }
     uintptr_t used = (uintptr_t)sbrk(0) - used_before;
 
+    // 헤더 오버헤드
     printf("\n── 오버헤드 측정 (N=%d) ──\n", N);
     printf("요청 합계 : %zu bytes\n", requested);
     printf("실제 사용 : %zu bytes\n", (size_t)used);
     printf("오버헤드  : %zu bytes (%.1f%%)\n",
            (size_t)(used - requested),
            100.0 * (double)(used - requested) / (double)requested);
+
+    // 분할 효과 측정 
+    // 큰 블록을 여러 개 free해 free list에 큰 조각을 쌓은 뒤,
+    // free된 블록 수보다 더 많은 작은 요청을 던진다.
+    // 분할 X: 작은 요청 하나가 큰 블록을 통째로 먹음 -> 큰 블록 소진 후 sbrk 폭증
+    // 분할 O: 큰 블록을 쪼개 여러 작은 요청에 나눠줌 -> sbrk 증가 거의 없음
+    #define BIG_N   200    // free시켜둘 큰 블록 개수
+    #define BIG_SZ  128    // 큰 블록 요청 크기
+    #define SMALL_SZ 16    // 작은 요청 크기
+    #define SMALL_N 600    // 작은 요청 개수 (BIG_N보다 크게)
+
+    void *bigs[BIG_N];
+    for (int i = 0; i < BIG_N; i++) {
+        bigs[i] = my_malloc(BIG_SZ);
+        assert(bigs[i] != NULL);
+    }
+    for (int i = 0; i < BIG_N; i++) my_free(bigs[i]);  // 큰 free 블록 BIG_N개 free
+
+    uintptr_t brk_before = (uintptr_t)sbrk(0);          // 작은 요청 직전 break
+    for (int i = 0; i < SMALL_N; i++) {
+        void *p = my_malloc(SMALL_SZ);
+        assert(p != NULL);
+    }
+    uintptr_t grew = (uintptr_t)sbrk(0) - brk_before;   // 작은 요청이 유발한 힙 증가
+
+    printf("\n분할 효과 측정\n");
+    printf("free된 %dB 블록 %d개 위에서 %dB 요청 %d개 처리\n",
+           BIG_SZ, BIG_N, SMALL_SZ, SMALL_N);
+    printf("작은 요청이 유발한 힙 증가(sbrk) : %zu bytes\n", (size_t)grew);
+    printf("(분할 O면 기존 free블록 재사용으로 0에 수렴, 분할 X면 폭증)\n");
 
     return 0;
 }
