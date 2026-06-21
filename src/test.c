@@ -62,7 +62,7 @@ int main(void) {
     uintptr_t used = (uintptr_t)sbrk(0) - used_before;
 
     // 헤더 오버헤드
-    printf("\n── 오버헤드 측정 (N=%d) ──\n", N);
+    printf("\n 오버헤드 측정 (N=%d) \n", N);
     printf("요청 합계 : %zu bytes\n", requested);
     printf("실제 사용 : %zu bytes\n", (size_t)used);
     printf("오버헤드  : %zu bytes (%.1f%%)\n",

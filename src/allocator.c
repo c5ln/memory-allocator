@@ -10,6 +10,20 @@ void *my_malloc(size_t size){
     {
         uint32_t* h = (uint32_t*)(*link);
         size_t chunk_size = *h & ~15u;
+        if(chunk_size >= need + 16 ) {
+            *h = need | 1;
+            void *payload = (char*)(*link)+4;
+            
+            void *splited_chunk_payload = (char*)(*link)+need+4;
+            uint32_t *splited_chunk_header = (uint32_t*)splited_chunk_payload-1;   
+            *splited_chunk_header = (uint32_t)(chunk_size - need);
+            
+            *link = *(void**)payload;
+            *(void**)splited_chunk_payload = free_head;
+            free_head = (void*)splited_chunk_header;
+
+            return payload;
+        }
         if(chunk_size >= need){
             *h = *h | 1;
             void *payload = (char*)(*link)+4;
