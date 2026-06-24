@@ -5,34 +5,43 @@
 #include <string.h>
 #include "allocator.h"
 
+// 검증 모드: gcc -DCHECK 로 켜면 매 연산마다 invariant 검사
+#ifdef CHECK
+  #define CK() check_invariant()
+#else
+  #define CK() ((void)0)
+#endif
+
 int main(void) {
     // 정렬 검증, 여러 크기로
     for (size_t s = 1; s <= 256; s++) {
         void *p = my_malloc(s);
         assert(p != NULL);
         assert((uintptr_t)p % 16 == 0);   //16정렬 강제 확인
+        CK();
     }
     printf("정렬 OK\n");
 
     // 쓸 수 있는가
     char *q = my_malloc(100);
+    CK();
     memset(q, 0xAB, 100);                 // 100바이트 전부 써봄
     for (int i = 0; i < 100; i++)
         assert((unsigned char)q[i] == 0xAB);
     printf("쓰기 OK\n");
 
     // 겹치지 않는가 
-    char *a = my_malloc(64);
-    char *b = my_malloc(64);
+    char *a = my_malloc(64); CK();
+    char *b = my_malloc(64); CK();
     memset(a, 'A', 64);
     memset(b, 'B', 64);
     for (int i = 0; i < 64; i++) assert(a[i] == 'A');  // b 쓴 게 a를 안 건드림
     printf("침범 X OK\n");
 
     // 재사용 가능한가
-    void *c = my_malloc(50);
-    my_free(c);
-    void *d = my_malloc(50);
+    void *c = my_malloc(50); CK();
+    my_free(c); CK();
+    void *d = my_malloc(50); CK();
     assert(c==d);
     printf("재사용 OK\n");
 
@@ -42,9 +51,13 @@ int main(void) {
     printf("재사용 후 쓰기 OK\n");
 
     // 여러 블록 free 후 재사용 (리스트 순회 확인)
-    void *x = my_malloc(30), *y = my_malloc(30), *z = my_malloc(30);
-    my_free(x); my_free(y); my_free(z);   // 셋 다 리스트에
-    void *w = my_malloc(30);
+    void *x = my_malloc(30); CK();
+    void *y = my_malloc(30); CK();
+    void *z = my_malloc(30); CK();
+    my_free(x); CK();
+    my_free(y); CK();
+    my_free(z); CK();                       // 셋 다 리스트에
+    void *w = my_malloc(30); CK();
     assert(w==z || w==y || w==x);          // 셋 중 하나 재사용
     printf("다중 free 재사용 OK\n");
 
@@ -52,6 +65,7 @@ int main(void) {
     #define N 1000
     size_t sizes[N];
     size_t requested = 0;
+    CK();                                         // 측정 루프 진입 전 한 번
     uintptr_t used_before = (uintptr_t)sbrk(0);   // 측정 시작 직전 break
     for (int i = 0; i < N; i++) {
         sizes[i] = (size_t)(rand() % 100) + 1;    // 1~100바이트 랜덤
@@ -60,6 +74,7 @@ int main(void) {
         requested += sizes[i];
     }
     uintptr_t used = (uintptr_t)sbrk(0) - used_before;
+    CK();                                         // 측정 루프 종료 후 한 번
 
     // 헤더 오버헤드
     printf("\n 오버헤드 측정 (N=%d) \n", N);
@@ -85,6 +100,7 @@ int main(void) {
         assert(bigs[i] != NULL);
     }
     for (int i = 0; i < BIG_N; i++) my_free(bigs[i]);  // 큰 free 블록 BIG_N개 free
+    CK();                                               // split 직전 상태 검증
 
     uintptr_t brk_before = (uintptr_t)sbrk(0);          // 작은 요청 직전 break
     for (int i = 0; i < SMALL_N; i++) {
@@ -92,6 +108,7 @@ int main(void) {
         assert(p != NULL);
     }
     uintptr_t grew = (uintptr_t)sbrk(0) - brk_before;   // 작은 요청이 유발한 힙 증가
+    CK();                                               // split 다 끝난 후 검증
 
     printf("\n분할 효과 측정\n");
     printf("free된 %dB 블록 %d개 위에서 %dB 요청 %d개 처리\n",
