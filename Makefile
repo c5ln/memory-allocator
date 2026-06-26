@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE
+CFLAGS = -g -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -DCHECK
 VPATH = src
 OBJS= test.o allocator.o
 TARGET= myallocator.out

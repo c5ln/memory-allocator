@@ -12,33 +12,39 @@
   #define CK() ((void)0)
 #endif
 
-int main(void) {
-    // 정렬 검증, 여러 크기로
+// 정렬 검증, 여러 크기로
+static void test_align(void) {
     for (size_t s = 1; s <= 256; s++) {
         void *p = my_malloc(s);
         assert(p != NULL);
         assert((uintptr_t)p % 16 == 0);   //16정렬 강제 확인
         CK();
     }
-    printf("정렬 OK\n");
+    // printf("정렬 OK\n");
+}
 
-    // 쓸 수 있는가
+// 쓸 수 있는가
+static void test_write(void) {
     char *q = my_malloc(100);
     CK();
     memset(q, 0xAB, 100);                 // 100바이트 전부 써봄
     for (int i = 0; i < 100; i++)
         assert((unsigned char)q[i] == 0xAB);
     printf("쓰기 OK\n");
+}
 
-    // 겹치지 않는가 
+// 겹치지 않는가
+static void test_no_overlap(void) {
     char *a = my_malloc(64); CK();
     char *b = my_malloc(64); CK();
     memset(a, 'A', 64);
     memset(b, 'B', 64);
     for (int i = 0; i < 64; i++) assert(a[i] == 'A');  // b 쓴 게 a를 안 건드림
     printf("침범 X OK\n");
+}
 
-    // 재사용 가능한가
+// 재사용 가능한가 + 재사용 후 데이터 정상
+static void test_reuse(void) {
     void *c = my_malloc(50); CK();
     my_free(c); CK();
     void *d = my_malloc(50); CK();
@@ -49,8 +55,10 @@ int main(void) {
     memset(d, 0xCD, 50);
     for(int i=0;i<50;i++) assert(((unsigned char*)d)[i]==0xCD);
     printf("재사용 후 쓰기 OK\n");
+}
 
-    // 여러 블록 free 후 재사용 (리스트 순회 확인)
+// 여러 블록 free 후 재사용 (리스트 순회 확인)
+static void test_multi_free_reuse(void) {
     void *x = my_malloc(30); CK();
     void *y = my_malloc(30); CK();
     void *z = my_malloc(30); CK();
@@ -60,8 +68,10 @@ int main(void) {
     void *w = my_malloc(30); CK();
     assert(w==z || w==y || w==x);          // 셋 중 하나 재사용
     printf("다중 free 재사용 OK\n");
+}
 
-    // 오버헤드 측정
+// 오버헤드 측정
+static void test_overhead(void) {
     #define N 1000
     size_t sizes[N];
     size_t requested = 0;
@@ -83,12 +93,14 @@ int main(void) {
     printf("오버헤드  : %zu bytes (%.1f%%)\n",
            (size_t)(used - requested),
            100.0 * (double)(used - requested) / (double)requested);
+}
 
-    // 분할 효과 측정 
-    // 큰 블록을 여러 개 free해 free list에 큰 조각을 쌓은 뒤,
-    // free된 블록 수보다 더 많은 작은 요청을 던진다.
-    // 분할 X: 작은 요청 하나가 큰 블록을 통째로 먹음 -> 큰 블록 소진 후 sbrk 폭증
-    // 분할 O: 큰 블록을 쪼개 여러 작은 요청에 나눠줌 -> sbrk 증가 거의 없음
+// 분할 효과 측정
+// 큰 블록을 여러 개 free해 free list에 큰 조각을 쌓은 뒤,
+// free된 블록 수보다 더 많은 작은 요청을 던진다.
+// 분할 X: 작은 요청 하나가 큰 블록을 통째로 먹음 -> 큰 블록 소진 후 sbrk 폭증
+// 분할 O: 큰 블록을 쪼개 여러 작은 요청에 나눠줌 -> sbrk 증가 거의 없음
+static void test_split(void) {
     #define BIG_N   200    // free시켜둘 큰 블록 개수
     #define BIG_SZ  128    // 큰 블록 요청 크기
     #define SMALL_SZ 16    // 작은 요청 크기
@@ -115,6 +127,30 @@ int main(void) {
            BIG_SZ, BIG_N, SMALL_SZ, SMALL_N);
     printf("작은 요청이 유발한 힙 증가(sbrk) : %zu bytes\n", (size_t)grew);
     printf("(분할 O면 기존 free블록 재사용으로 0에 수렴, 분할 X면 폭증)\n");
+}
+static void test_coalescing()
+{
+    void *a = my_malloc(100); CK();
+    void *b = my_malloc(100); CK();
+
+    my_free(b); my_free(a); CK();
+    void *c = my_malloc(200);
+    assert(a==c);
+    printf("오른쪽 병합 O\n");
+}
+
+int main(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);   // printf 버퍼 사용 X
+    test_coalescing();
+    // 오른쪽 coalescing 테스트
+    test_align();
+    test_write();
+    test_no_overlap();
+    test_reuse();
+    test_multi_free_reuse();
+    test_overhead();
+    test_split();
+
 
     return 0;
 }

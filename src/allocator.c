@@ -58,7 +58,7 @@ void *my_malloc(size_t size){
     *(uint32_t*)header = (uint32_t)need | 1 ;
     
     //heap 시작점 체크
-    if(heap_lo == NULL) heap_lo = p;
+    if(heap_lo == NULL) heap_lo = (void*)header;
 
     return (void*)payload;
 }
@@ -134,6 +134,6 @@ void my_free(void *ptr){
           p = *(void**)((char*)p + 4); // free list의 다음 블록 체크
       }
 
-      // 3) 개수 일치 = 두 집합이 같음
+      // 개수 일치 = 두 집합이 같음
       assert(linear_count == freelist_count);              // link 갱신 누락 검출
   }
