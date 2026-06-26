@@ -70,6 +70,26 @@ void my_free(void *ptr){
     
     *header = *header & (~1u);
     
+    // coalescing logic
+    // 오른쪽 블록 찾기
+    size_t size = *header & ~15u;
+    uint32_t* right_header = (uint32_t*)((char*)header + size);
+    // 오른쪽 블럭도 free 영역인 경우
+    if ((char*)right_header < (char*)heap_hi && (*right_header & 1) == 0)
+    {
+        void **link = &free_head; 
+        while(*link){
+            //free list의 block과 righ_header의 주소가 같으면
+            if(*link == (void*)right_header){
+                //link 해제 
+                *link = *(void**)((char*)right_header + 4); // right header가 원래 가리키던 곳의 주소 -> 즉, right_header는 unlink
+                break;
+            }
+            link = (void**)((char*)(*link)+4);
+        }
+        *header = size + (*right_header & ~15u); // header 더하기
+    }
+    
     *(void**)ptr = free_head;
     free_head = (void*)header;
 }
