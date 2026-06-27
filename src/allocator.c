@@ -13,7 +13,7 @@ static void *heap_hi = NULL;
 void *my_malloc(size_t size){
     if(size==0) return NULL;
 
-    size_t need = (size + 4 + 15) & ~(size_t)15;  // 16의 배수로 올림 연산. 이진수의 관점으로 보면 된다.
+    size_t need = (size + 4 + 4 + 15) & ~(size_t)15;  // 16의 배수로 올림 연산. 이진수의 관점으로 보면 된다.
     void **link = &free_head;
     while(*link)
     {
@@ -34,7 +34,9 @@ void *my_malloc(size_t size){
             return payload;
         }
         if(chunk_size >= need){
-            *h = *h | 1;
+            *h = *h | 1; //header
+            *((char*)h + (*h & ~15u) - 4) |= 1; //footer
+
             void *payload = (char*)(*link)+4;
             *link = *(void**)payload;
             return payload;
@@ -55,7 +57,10 @@ void *my_malloc(size_t size){
     }
     char *header = (char*)p + pad;
     char *payload = header+4;
+    char *footer = header + need - 4;
     *(uint32_t*)header = (uint32_t)need | 1 ;
+    *(uint32_t*)footer = (uint32_t)need | 1 ;
+    
     
     //heap 시작점 체크
     if(heap_lo == NULL) heap_lo = (void*)header;
@@ -87,9 +92,35 @@ void my_free(void *ptr){
             }
             link = (void**)((char*)(*link)+4);
         }
-        *header = size + (*right_header & ~15u); // header 더하기
+        *header = size + (*right_header & ~15u); // header 더하기 
+        *(uint32_t*)((char*)header + *header - 4) = *header;
     }
-    
+    // 왼쪽 블럭 찾기
+    uint32_t* left_footer = (uint32_t*)((char*)header - 4);
+    size_t left_size = *left_footer & ~15u;
+    // 왼쪽 블럭도 free인 경우
+    if ((char*)left_footer > (char*)heap_lo && (*left_footer & 1) == 0)
+    {
+        uint32_t* left_header = (uint32_t*)((char*)left_footer-left_size+4);
+        void** link = &free_head;
+        while(*link)
+        {
+            if(*link == (void*)left_header)
+            {
+                *link = *(void**)((char*)left_header + 4);
+                break;
+            }
+            link = (void**)((char*)(*link)+4);
+        }
+        *left_header = (*header&~15u) + (*left_header & ~15u); // header 더하기
+        
+        *(uint32_t*)((char*)header+size-4) = *left_header;
+
+        *(void**)((char*)left_header + 4) = free_head;
+        free_head = (void*)left_header;
+        return;
+    }
+
     *(void**)ptr = free_head;
     free_head = (void*)header;
 }
