@@ -1,6 +1,8 @@
 #include "allocator.h"
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
 
 static void *free_head = NULL; // free list 머리
 
@@ -129,6 +131,18 @@ void my_free(void *ptr){
     *(void**)ptr = free_head;
     free_head = (void*)header;
 }
+
+
+void *my_calloc(size_t nmemb, size_t size){
+    if(nmemb == 0 || size == 0) return NULL;
+    if(nmemb > SIZE_MAX / size) return NULL; // 곱셈 오버플로 차단
+
+    size_t total = nmemb * size;
+    void *p = my_malloc(total);
+    if(p) memset(p, 0, total);
+    return p;
+}
+
   void check_invariant()
   {
       #define MAX_NODES 10000

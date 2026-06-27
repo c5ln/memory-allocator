@@ -146,9 +146,23 @@ static void test_coalescing()
     printf("왼쪽 병합 OK\n");
 }
 
+// calloc: 0 초기화 + 오버플로 차단
+static void test_calloc(void) {
+    unsigned char *p = my_calloc(10, 8); CK();
+    assert(p != NULL);
+    for (int i = 0; i < 80; i++) assert(p[i] == 0);   // 전부 0인지
+    my_free(p); CK();
+
+    assert(my_calloc(0, 8) == NULL);                  // n==0
+    assert(my_calloc((size_t)-1, 2) == NULL);         // 곱셈 오버플로 차단
+    printf("calloc OK\n");
+}
+
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);   // printf 버퍼 사용 X
     test_coalescing();
+    test_calloc();
     // 오른쪽 coalescing 테스트
     test_align();
     test_write();
