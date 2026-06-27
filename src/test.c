@@ -136,7 +136,14 @@ static void test_coalescing()
     my_free(b); my_free(a); CK();
     void *c = my_malloc(200);
     assert(a==c);
-    printf("오른쪽 병합 O\n");
+    printf("오른쪽 병합 OK\n");
+
+    void *d = my_malloc(100); CK();
+    my_free(c); CK();
+    my_free(d); CK();
+    void *e = my_malloc(300); CK();
+    assert(a==e);
+    printf("왼쪽 병합 OK\n");
 }
 
 int main(void) {

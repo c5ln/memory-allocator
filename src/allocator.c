@@ -20,13 +20,18 @@ void *my_malloc(size_t size){
         uint32_t* h = (uint32_t*)(*link);
         size_t chunk_size = *h & ~15u;
         if(chunk_size >= need + 16 ) {
-            *h = need | 1;
-            void *payload = (char*)(*link)+4;
+            *h = need | 1; // 활용 표기
+            *(uint32_t*)((char*)h+need-4) = need | 1; // footer도 표기
+
+            void *payload = (char*)(*link)+4; // payload 위치
             
             void *splited_chunk_payload = (char*)(*link)+need+4;
             uint32_t *splited_chunk_header = (uint32_t*)splited_chunk_payload-1;   
-            *splited_chunk_header = (uint32_t)(chunk_size - need);
-            
+            *splited_chunk_header = (uint32_t)(chunk_size - need); // 자르고 남은 영역만큼 header에 표기
+
+            void *splited_chunk_footer = (void*)((char*)splited_chunk_header + *splited_chunk_header -4); 
+            *(uint32_t*)splited_chunk_footer = *splited_chunk_header; // footer 붙이기
+
             *link = *(void**)payload;
             *(void**)splited_chunk_payload = free_head;
             free_head = (void*)splited_chunk_header;
@@ -114,7 +119,7 @@ void my_free(void *ptr){
         }
         *left_header = (*header&~15u) + (*left_header & ~15u); // header 더하기
         
-        *(uint32_t*)((char*)header+size-4) = *left_header;
+        *(uint32_t*)((char*)left_header+(*left_header & ~15u) - 4) = *left_header;
 
         *(void**)((char*)left_header + 4) = free_head;
         free_head = (void*)left_header;
@@ -138,6 +143,7 @@ void my_free(void *ptr){
         assert(chunk%16==0); // 메모리 정렬 확인
         assert(chunk >= 16); // 메모리 최소 크기 확인
         assert(p+chunk <= (char*)heap_hi); // chunk가 heap 안 넘는지
+        assert((*(uint32_t*)(p + chunk - 4) & ~15u) == chunk); // header 크기 == footer 크기
      
         if ((*(uint32_t*)p & 1) == 0) { 
             linear_free_list[linear_count++] = p ;
