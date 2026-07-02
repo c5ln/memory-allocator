@@ -38,7 +38,7 @@ static void freelist_remove(uint32_t *header){
 
 
 void *my_malloc(size_t size){
-    if(size==0) return NULL;
+    // if(size==0) return NULL;
 
     size_t need = (size + 4 + 4 + 15) & ~(size_t)15;  // 16의 배수로 올림 연산. 이진수의 관점으로 보면 된다.
     void **link = &free_head;
