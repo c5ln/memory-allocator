@@ -12,6 +12,31 @@ static void *heap_lo = NULL;
 static void *heap_hi = NULL;
 
 
+// 블록 헤더/footer에 동일한 tag(size|flag) 기록. footer 위치는 tag의 size로 계산
+static void set_tags(uint32_t *header, uint32_t tag){
+    *header = tag;
+    *(uint32_t*)((char*)header + (tag & ~15u) - 4) = tag;
+}
+
+// free list 맨 앞에 블록 push (payload 첫 워드에 next 포인터 저장)
+static void freelist_push(uint32_t *header){
+    *(void**)((char*)header + 4) = free_head;
+    free_head = (void*)header;
+}
+
+// free list에서 해당 블록을 제거 (없으면 무시)
+static void freelist_remove(uint32_t *header){
+    void **link = &free_head;
+    while(*link){
+        if(*link == (void*)header){
+            *link = *(void**)((char*)header + 4);
+            return;
+        }
+        link = (void**)((char*)(*link) + 4);
+    }
+}
+
+
 void *my_malloc(size_t size){
     if(size==0) return NULL;
 
@@ -22,29 +47,21 @@ void *my_malloc(size_t size){
         uint32_t* h = (uint32_t*)(*link);
         size_t chunk_size = *h & ~15u;
         if(chunk_size >= need + 16 ) {
-            *h = need | 1; // 활용 표기
-            *(uint32_t*)((char*)h+need-4) = need | 1; // footer도 표기
+            set_tags(h, need | 1); // 사용 블록 태그
 
-            void *payload = (char*)(*link)+4; // payload 위치
-            
-            void *splited_chunk_payload = (char*)(*link)+need+4;
-            uint32_t *splited_chunk_header = (uint32_t*)splited_chunk_payload-1;   
-            *splited_chunk_header = (uint32_t)(chunk_size - need); // 자르고 남은 영역만큼 header에 표기
+            void *payload = (char*)h + 4; // payload 위치
 
-            void *splited_chunk_footer = (void*)((char*)splited_chunk_header + *splited_chunk_header -4); 
-            *(uint32_t*)splited_chunk_footer = *splited_chunk_header; // footer 붙이기
+            uint32_t *split_header = (uint32_t*)((char*)h + need);
+            set_tags(split_header, (uint32_t)(chunk_size - need)); // 남은 free 블록
 
-            *link = *(void**)payload;
-            *(void**)splited_chunk_payload = free_head;
-            free_head = (void*)splited_chunk_header;
-
+            *link = *(void**)payload; // 원래 블록 unlink
+            freelist_push(split_header); // 남은 블록 push
             return payload;
         }
         if(chunk_size >= need){
-            *h = *h | 1; //header
-            *((char*)h + (*h & ~15u) - 4) |= 1; //footer
+            set_tags(h, (uint32_t)chunk_size | 1); // 통째로 사용 표기
 
-            void *payload = (char*)(*link)+4;
+            void *payload = (char*)h + 4;
             *link = *(void**)payload;
             return payload;
         }
@@ -64,10 +81,8 @@ void *my_malloc(size_t size){
     }
     char *header = (char*)p + pad;
     char *payload = header+4;
-    char *footer = header + need - 4;
-    *(uint32_t*)header = (uint32_t)need | 1 ;
-    *(uint32_t*)footer = (uint32_t)need | 1 ;
-    
+    set_tags((uint32_t*)header, (uint32_t)need | 1);
+
     
     //heap 시작점 체크
     if(heap_lo == NULL) heap_lo = (void*)header;
@@ -89,18 +104,8 @@ void my_free(void *ptr){
     // 오른쪽 블럭도 free 영역인 경우
     if ((char*)right_header < (char*)heap_hi && (*right_header & 1) == 0)
     {
-        void **link = &free_head; 
-        while(*link){
-            //free list의 block과 righ_header의 주소가 같으면
-            if(*link == (void*)right_header){
-                //link 해제 
-                *link = *(void**)((char*)right_header + 4); // right header가 원래 가리키던 곳의 주소 -> 즉, right_header는 unlink
-                break;
-            }
-            link = (void**)((char*)(*link)+4);
-        }
-        *header = size + (*right_header & ~15u); // header 더하기 
-        *(uint32_t*)((char*)header + *header - 4) = *header;
+        freelist_remove(right_header); // 오른쪽 블록 unlink
+        set_tags(header, (uint32_t)(size + (*right_header & ~15u))); // 병합 크기로 태그
     }
     // 왼쪽 블럭 찾기
     uint32_t* left_footer = (uint32_t*)((char*)header - 4);
@@ -109,27 +114,13 @@ void my_free(void *ptr){
     if ((char*)left_footer > (char*)heap_lo && (*left_footer & 1) == 0)
     {
         uint32_t* left_header = (uint32_t*)((char*)left_footer-left_size+4);
-        void** link = &free_head;
-        while(*link)
-        {
-            if(*link == (void*)left_header)
-            {
-                *link = *(void**)((char*)left_header + 4);
-                break;
-            }
-            link = (void**)((char*)(*link)+4);
-        }
-        *left_header = (*header&~15u) + (*left_header & ~15u); // header 더하기
-        
-        *(uint32_t*)((char*)left_header+(*left_header & ~15u) - 4) = *left_header;
-
-        *(void**)((char*)left_header + 4) = free_head;
-        free_head = (void*)left_header;
+        freelist_remove(left_header); // 왼쪽 블록 unlink
+        set_tags(left_header, (uint32_t)((*header&~15u) + (*left_header & ~15u))); // 병합 크기로 태그
+        freelist_push(left_header);
         return;
     }
 
-    *(void**)ptr = free_head;
-    free_head = (void*)header;
+    freelist_push(header);
 }
 
 
@@ -162,54 +153,18 @@ void *my_realloc(void *ptr, size_t size)
         if((char*)right_header < (char*)heap_hi && (*right_header & 1)==0 &&old_size + (size_t)(*right_header & ~15u) >= new_size)
         {   
             size_t combined = old_size + *right_header;
-            // 합치고 남은 공간이 최소 크기인 16byte보다 크다면, 16byte를 spliting
+            freelist_remove(right_header); // 오른쪽 free 블록 unlink
+            // 합치고 남은 공간이 최소 크기인 16byte 이상이면 spliting
             if(combined >= new_size + 16)
             {
-                uint32_t *spliting_header = (uint32_t*)((char*)ptr + new_size - 4);
-                *spliting_header = (combined - (size_t)new_size) & ~15u;
-                uint32_t *spliting_footer = (uint32_t*)((char*)ptr + combined - 8);
-                *spliting_footer = *spliting_header;
-
-                // free list 갱신
-                void **link = &free_head;
-                while(*link)
-                {
-                    if((void*)right_header == *link)
-                    {
-                        //free list 갱신
-                        *link = *(void**)((char*)right_header+4); // right_header의 payload에 있던 다음 node에 대한 주소로 link 갱신
-                        // free list에 spliting된 block 추가
-                        *(void**)((char*)spliting_header + 4) = free_head;
-                        // head 갱신
-                        free_head = (void*)spliting_header;
-                        break;
-                    }
-                    // 못 찾았으므로 다음 노드로 
-                    link = (void**)((char*)*link + 4); 
-                }
-                // 앞 블록 header 갱신
-                *((uint32_t*)ptr - 1) = new_size | 1;
-                // 앞 블록 footer 갱신                
-                *(uint32_t*)((char*)ptr + new_size - 8) = new_size | 1; 
+                uint32_t *split_header = (uint32_t*)((char*)ptr + new_size - 4);
+                set_tags(split_header, (uint32_t)(combined - new_size)); // 남은 free 블록
+                freelist_push(split_header);
+                set_tags((uint32_t*)ptr - 1, (uint32_t)new_size | 1); // 앞 블록
             }
-            // 합치고 남은 공간이 16byte보다 작을 예정이라면 spliting 하지 않는다.
+            // 남는 공간이 16byte보다 작으면 통째로 흡수
             else {
-                //header 와 footer 갱신
-                *((uint32_t*)ptr - 1) = combined | 1;
-                *(uint32_t*)((char*)ptr + combined-8) = combined | 1;
-                // free list 에서 합쳐진 공간 삭제
-                void **link = &free_head;
-                while(*link)
-                {
-                    if((void*)right_header == *link)
-                    {
-                        //free list 갱신
-                        *link = *(void**)((char*)right_header+4); // right_header의 payload에 있던 다음 node에 대한 주소로 link 갱신
-                        break;
-                    }
-                    // 못 찾았으므로 다음 노드로 
-                    link = (void**)((char*)*link + 4); 
-                }
+                set_tags((uint32_t*)ptr - 1, (uint32_t)combined | 1);
             }
             return ptr;
         }
@@ -229,19 +184,11 @@ void *my_realloc(void *ptr, size_t size)
         // 남는 공간이 최소 블록(16byte) 이상일 때만 spliting
         if(leftover >= 16)
         {
-            // 앞 블록을 new_size로 갱신
-            *((uint32_t*)ptr - 1) = new_size | (*((uint32_t*)ptr - 1) & 15u);
-            *(uint32_t*)((char*)ptr + new_size - 8) = *((uint32_t*)ptr - 1);
+            set_tags((uint32_t*)ptr - 1, (uint32_t)new_size | 1); // 앞 블록을 new_size로
 
-            // 뒤쪽 남은 블록을 free 블록으로
             uint32_t *free_header = (uint32_t*)((char*)ptr + new_size - 4);
-            *free_header = (uint32_t)leftover;
-            *(uint32_t*)((char*)ptr + old_size - 8) = (uint32_t)leftover; // footer
-
-            // free list에 넣기
-            void *free_payload = (char*)free_header + 4;
-            *(void**)free_payload = free_head;
-            free_head = (void*)free_header;
+            set_tags(free_header, (uint32_t)leftover); // 뒤쪽 남은 블록을 free 블록으로
+            freelist_push(free_header);
         }
         // leftover < 16 이면 자르지 않고 old_size 그대로 둔다
         return ptr;
