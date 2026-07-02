@@ -153,7 +153,8 @@ static void test_calloc(void) {
     for (int i = 0; i < 80; i++) assert(p[i] == 0);   // 전부 0인지
     my_free(p); CK();
 
-    assert(my_calloc(0, 8) == NULL);                  // n==0
+    assert(my_calloc(0, 8) == NULL);                  // nmemb==0
+    assert(my_calloc(1, 0) == NULL);                  // size==0
     assert(my_calloc((size_t)-1, 2) == NULL);         // 곱셈 오버플로 차단
     printf("calloc OK\n");
 }

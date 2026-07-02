@@ -142,15 +142,121 @@ void *my_calloc(size_t nmemb, size_t size){
     if(p) memset(p, 0, total);
     return p;
 }
+void *my_realloc(void *ptr, size_t size)
+{
+    if(ptr == NULL) return my_malloc(size);
+    if(size==0 && ptr != NULL) {
+        my_free(ptr);
+        return NULL;
+    }
+    // 기존의 block size
+    size_t old_size = *((uint32_t*)ptr-1) & ~15u;
+    // 새로 필요한 size
+    size_t new_size = (size + 8 + 15) & ~15u; 
 
-  void check_invariant()
-  {
-      #define MAX_NODES 10000
-      static void *linear_free_list[MAX_NODES];
-      int linear_count = 0;
+    // 새로운 size > old size
+    if(new_size > old_size){
+        // 잔여 공간 여부 파악. 어떻게?
+        uint32_t *right_header = (uint32_t*)((char*)ptr - 4 + old_size);
+        // 1. 이웃이 존재하고 free 상태이며 공간 충분하면 위치 그대로 확장
+        if((char*)right_header < (char*)heap_hi && (*right_header & 1)==0 &&old_size + (size_t)(*right_header & ~15u) >= new_size)
+        {   
+            size_t combined = old_size + *right_header;
+            // 합치고 남은 공간이 최소 크기인 16byte보다 크다면, 16byte를 spliting
+            if(combined >= new_size + 16)
+            {
+                uint32_t *spliting_header = (uint32_t*)((char*)ptr + new_size - 4);
+                *spliting_header = (combined - (size_t)new_size) & ~15u;
+                uint32_t *spliting_footer = (uint32_t*)((char*)ptr + combined - 8);
+                *spliting_footer = *spliting_header;
 
-      // 블록 단위 검사 + chunk 수집
-      for(char* p = heap_lo; p < (char*)heap_hi;){
+                // free list 갱신
+                void **link = &free_head;
+                while(*link)
+                {
+                    if((void*)right_header == *link)
+                    {
+                        //free list 갱신
+                        *link = *(void**)((char*)right_header+4); // right_header의 payload에 있던 다음 node에 대한 주소로 link 갱신
+                        // free list에 spliting된 block 추가
+                        *(void**)((char*)spliting_header + 4) = free_head;
+                        // head 갱신
+                        free_head = (void*)spliting_header;
+                        break;
+                    }
+                    // 못 찾았으므로 다음 노드로 
+                    link = (void**)((char*)*link + 4); 
+                }
+                // 앞 블록 header 갱신
+                *((uint32_t*)ptr - 1) = new_size | 1;
+                // 앞 블록 footer 갱신                
+                *(uint32_t*)((char*)ptr + new_size - 8) = new_size | 1; 
+            }
+            // 합치고 남은 공간이 16byte보다 작을 예정이라면 spliting 하지 않는다.
+            else {
+                //header 와 footer 갱신
+                *((uint32_t*)ptr - 1) = combined | 1;
+                *(uint32_t*)((char*)ptr + combined-8) = combined | 1;
+                // free list 에서 합쳐진 공간 삭제
+                void **link = &free_head;
+                while(*link)
+                {
+                    if((void*)right_header == *link)
+                    {
+                        //free list 갱신
+                        *link = *(void**)((char*)right_header+4); // right_header의 payload에 있던 다음 node에 대한 주소로 link 갱신
+                        break;
+                    }
+                    // 못 찾았으므로 다음 노드로 
+                    link = (void**)((char*)*link + 4); 
+                }
+            }
+            return ptr;
+        }
+        // 2. block 위치 이동
+        else {
+        void *new_ptr = my_malloc(new_size);
+        if(new_ptr == NULL) return NULL;
+        memcpy(new_ptr, ptr, old_size-8);
+        my_free(ptr);
+        return new_ptr;
+        }
+    }
+    // 새로운 size <= old size
+    else if(new_size <= old_size)
+    {
+        size_t leftover = old_size - new_size;
+        // 남는 공간이 최소 블록(16byte) 이상일 때만 spliting
+        if(leftover >= 16)
+        {
+            // 앞 블록을 new_size로 갱신
+            *((uint32_t*)ptr - 1) = new_size | (*((uint32_t*)ptr - 1) & 15u);
+            *(uint32_t*)((char*)ptr + new_size - 8) = *((uint32_t*)ptr - 1);
+
+            // 뒤쪽 남은 블록을 free 블록으로
+            uint32_t *free_header = (uint32_t*)((char*)ptr + new_size - 4);
+            *free_header = (uint32_t)leftover;
+            *(uint32_t*)((char*)ptr + old_size - 8) = (uint32_t)leftover; // footer
+
+            // free list에 넣기
+            void *free_payload = (char*)free_header + 4;
+            *(void**)free_payload = free_head;
+            free_head = (void*)free_header;
+        }
+        // leftover < 16 이면 자르지 않고 old_size 그대로 둔다
+        return ptr;
+    }
+    return NULL;
+}
+
+void check_invariant()
+{
+    #define MAX_NODES 10000
+    static void *linear_free_list[MAX_NODES];
+    int linear_count = 0;
+
+    // 블록 단위 검사 + chunk 수집
+    for(char* p = heap_lo; p < (char*)heap_hi;){
 
         size_t chunk = *(uint32_t*)p & ~15u;
 
@@ -168,23 +274,23 @@ void *my_calloc(size_t nmemb, size_t size){
       
 
       // free list 탐색 + 교차 검증
-      int freelist_count = 0;
-      void *p = free_head;
-      while (p) {
-          assert((*(uint32_t*)p & 1) == 0); // free 영역인지 체크
-          assert(p >= heap_lo && p <= heap_hi); // 힙 범위 체크
-          assert(freelist_count < MAX_NODES);              // 사이클/폭주 감지
+    int freelist_count = 0;
+    void *p = free_head;
+    while (p) {
+        assert((*(uint32_t*)p & 1) == 0); // free 영역인지 체크
+        assert(p >= heap_lo && p <= heap_hi); // 힙 범위 체크
+        assert(freelist_count < MAX_NODES);              // 사이클/폭주 감지
 
-          int found = 0;
-          for (int i = 0; i < linear_count; i++) {
-              if (linear_free_list[i] == p) { found = 1; break; }
-          }
-          assert(found);                                   // 교차 검증
+        int found = 0;
+        for (int i = 0; i < linear_count; i++) {
+            if (linear_free_list[i] == p) { found = 1; break; }
+        }
+        assert(found);                                   // 교차 검증
 
-          freelist_count++;
-          p = *(void**)((char*)p + 4); // free list의 다음 블록 체크
-      }
+        freelist_count++;
+        p = *(void**)((char*)p + 4); // free list의 다음 블록 체크
+    }
 
-      // 개수 일치 = 두 집합이 같음
-      assert(linear_count == freelist_count);              // link 갱신 누락 검출
-  }
+    // 개수 일치 = 두 집합이 같음
+    assert(linear_count == freelist_count);              // link 갱신 누락 검출
+}
