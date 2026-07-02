@@ -159,6 +159,58 @@ static void test_calloc(void) {
     printf("calloc OK\n");
 }
 
+// realloc 검증: NULL / size==0 / 축소 / 확장(제자리) / 확장(이동)
+static void test_realloc(void) {
+    // ptr == NULL 이면 malloc 처럼 동작
+    void *p = my_realloc(NULL, 50); CK();
+    assert(p != NULL);
+    assert((uintptr_t)p % 16 == 0);              // 16정렬
+    printf("realloc(NULL) OK\n");
+
+    // ize == 0 이면 free 후 NULL
+    assert(my_realloc(p, 0) == NULL); CK();
+    printf("realloc(_,0) OK\n");
+
+    // 축소 + split: 제자리 유지 + 데이터 보존 + 잘라낸 뒤쪽 재사용
+    char *a = my_malloc(200); CK();
+    memset(a, 0xAB, 200);
+    char *a2 = my_realloc(a, 16); CK();
+    assert(a2 == a);                             // 축소는 이동 없음
+    for (int i = 0; i < 16; i++)
+        assert((unsigned char)a2[i] == 0xAB);    // 앞부분 데이터 보존
+    void *reuse = my_malloc(16); CK();           // 잘라낸 leftover 재사용
+    assert(reuse != NULL);
+    printf("realloc 축소+split OK\n");
+    my_free(a2); CK();
+    my_free(reuse); CK();
+
+    // 확장(제자리): 오른쪽 이웃이 free면 이동 없이 확장
+    char *b = my_malloc(64); CK();
+    char *c = my_malloc(64); CK();               // b의 오른쪽 이웃
+    char *guard = my_malloc(64); CK();           // c 뒤 경계 (heap_hi 보호)
+    memset(b, 0xCD, 64);
+    my_free(c); CK();                            // b의 오른쪽을 free 상태로
+    char *b2 = my_realloc(b, 100); CK();
+    assert(b2 == b);                             // 이동 없이 제자리 확장
+    for (int i = 0; i < 64; i++)
+        assert((unsigned char)b2[i] == 0xCD);    // 데이터 보존
+    printf("realloc 확장(제자리) OK\n");
+    my_free(b2); CK();
+    my_free(guard); CK();
+
+    // 확장(이동): 오른쪽 이웃이 사용중이면 새 블록으로 이동+복사
+    char *d = my_malloc(50); CK();
+    char *e = my_malloc(50); CK();               // d의 오른쪽 이웃 (사용중)
+    memset(d, 0xEF, 50);
+    char *d2 = my_realloc(d, 300); CK();
+    assert(d2 != NULL);
+    for (int i = 0; i < 50; i++)
+        assert((unsigned char)d2[i] == 0xEF);    // 이동 후에도 데이터 보존
+    printf("realloc 확장(이동) OK\n");
+    my_free(d2); CK();
+    my_free(e); CK();
+}
+
 
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);   // printf 버퍼 사용 X
@@ -170,6 +222,7 @@ int main(void) {
     test_no_overlap();
     test_reuse();
     test_multi_free_reuse();
+    test_realloc();
     test_overhead();
     test_split();
 
