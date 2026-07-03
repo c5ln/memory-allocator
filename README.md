@@ -67,3 +67,31 @@ free list 위에서 구현하고, split(분할)·coalesce(병합)으로 단편�
 make            # -DCHECK 포함 빌드 (매 연산마다 invariant 검사)
 ./myallocator.out
 ```
+
+## 벤치마크 (tree-sitter로 Redis 소스 파싱)
+
+tree-sitter의 커스텀 allocator 훅(`ts_set_allocator`)에 내 할당기를 끼워,
+glibc malloc과 실제 파싱 워크로드로 비교한다.
+
+### 의존성 준비
+`vendor/`는 git에 포함되지 않는다. 아래 커밋으로 clone해야 결과가 재현된다:
+```sh
+git clone https://github.com/tree-sitter/tree-sitter vendor/tree-sitter
+git -C vendor/tree-sitter checkout 9fc2f486a8c1e1f5a4b1954cdcd240fcd09eb003
+
+git clone https://github.com/tree-sitter/tree-sitter-c vendor/tree-sitter-c
+git -C vendor/tree-sitter-c checkout b780e47fc780ddc8da13afa35a3f4ed5c157823d
+```
+파싱 대상인 Redis 소스는 `bench/redis-src/`에 포함돼 있다.
+
+### 실행
+```sh
+make bench-verify      # 정확성 게이트: invariant 검사 + 두 allocator 결과 동등성 diff
+make bench             # 게이트 통과 후 측정 (외부 반복 x 내부 반복, CPU 고정)
+make bench-plot        # 막대 차트 + min-max 에러 바 → bench/results/plots/
+make bench-sweep       # 입력 크기 스윕 (소/중/대)
+make bench-plot-sweep  # 스케일링 라인 차트 → bench/results/sweep/plots/
+```
+`bench`는 `bench-verify`에 의존한다 — 정확성 검증에 실패하면 측정이 돌지 않는다.
+allocator 버그는 크래시가 아니라 조용히 잘못된 파스 트리로 나타날 수 있어서,
+성능 수치는 정확성이 확인된 경우에만 의미가 있기 때문이다.

@@ -61,7 +61,6 @@ static void freelist_remove(uint32_t *header){
     }
 }
 
-
 void *my_malloc(size_t size){
     // if(size==0) return NULL;
 
@@ -237,7 +236,8 @@ void check_invariant()
         assert(p+chunk <= (char*)heap_hi); // chunk가 heap 안 넘는지
         assert((*(uint32_t*)(p + chunk - 4) & ~15u) == chunk); // header 크기 == footer 크기
      
-        if ((*(uint32_t*)p & 1) == 0) { 
+        if ((*(uint32_t*)p & 1) == 0) {
+            assert(linear_count < MAX_NODES); // 수집 배열 overflow 방지
             linear_free_list[linear_count++] = p ;
         }
 
