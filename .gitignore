@@ -55,9 +55,3 @@ dkms.conf
 *.dwo
 
 docs/**
-bench/bench_driver
-bench/bench_driver_check
-bench/results/
-
-# 외부 의존성 (clone 방법은 README 참고)
-vendor/

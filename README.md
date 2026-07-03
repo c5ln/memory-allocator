@@ -22,7 +22,6 @@ free list 위에서 구현하고, split(분할)·coalesce(병합)으로 단편�
 
 - 16정렬을 전제로 하고 `header_simul.py`로 시각화했다(4B vs 8B 헤더의 실제 할당 크기 비교).
 - 그 결과 malloc 요청하는 size가 uniform distribution을 따른다는 가정하에 약 25% 상황에서 4byte 헤더를 사용했을 때, 16byte만큼 공간 이득이다. 즉 평균 4byte 이득이다. 하지만, 실제로는 uniform distribution이 아니고, 프로그램마다 자주 원하는 크기가 있을 것이다. 그래서 실제로는 8byte 헤더이든 4byte 헤더이든 오버헤드가 같을 수도 있다. 재밌는 지점이다. 
-- 32비트 폭이면 단일 블록 크기 한도가 4GiB로, 이 할당기 용도에 충분하다.
 
 ### 3. 블록 레이아웃 (경계 태그 / boundary tag)
 ```
@@ -52,15 +51,14 @@ free list 위에서 구현하고, split(분할)·coalesce(병합)으로 단편�
 ### 7. calloc / realloc
 - `my_calloc(n, size)`: `n > SIZE_MAX/size` 곱셈 오버플로를 먼저 차단하고 `memset`으로 0 초기화.
 - `my_realloc(ptr, size)`:
-  - 축소/현상유지 → 남는 조각이 16B 이상이면 분할 반납.
-  - 확대 → 물리적으로 뒤에 붙은 free 블록과 **in-place 병합**해 복사를 회피. 불가하면
-    malloc + copy + free.
+  - 축소/현상유지 -> 남는 조각이 16B 이상이면 분할 반납.
+  - 확대 -> 물리적으로 뒤에 붙은 free 블록과 **in-place 병합**해 복사를 회피. 불가하면 malloc + copy + free.
   - `realloc(NULL, n) == malloc(n)`, `realloc(p, 0) == free(p)` 표준 의미 처리.
 
 ### 8. 무결성 검사 — `check_invariant()`
-디버깅/검증 자산. 힙을 선형 스캔하며 (정렬·최소 크기·헤더==풋터·힙 범위) 확인하고,
-선형 스캔으로 모은 free 집합과 free list를 **교차 검증**(개수·구성원 일치)해 링크 누락이나
-사이클을 잡는다. `-DCHECK`로 빌드하면 테스트의 매 연산마다 호출된다.
+디버깅/검증 자산. 힙을 스캔하며 (정렬·최소 크기·헤더==풋터·힙 범위) 확인하고,
+선형 스캔으로 모은 free 집합과 free list를 **교차 검증**(개수·구성원 일치)해 링크 누락이나 사이클을 잡는다. 
+`-DCHECK`로 빌드하면 테스트의 매 연산마다 호출된다.
 
 ## 빌드 & 테스트
 ```sh
@@ -68,30 +66,13 @@ make            # -DCHECK 포함 빌드 (매 연산마다 invariant 검사)
 ./myallocator.out
 ```
 
-## 벤치마크 (tree-sitter로 Redis 소스 파싱)
+## Extension: allocsitter
 
-tree-sitter의 커스텀 allocator 훅(`ts_set_allocator`)에 내 할당기를 끼워,
-glibc malloc과 실제 파싱 워크로드로 비교한다.
+이 allocator를 실제 workload에 적용한 후속 프로젝트.
+tree-sitter로 Redis 소스를 파싱하는 벤치마크(정확성 게이트 + 입력 크기 스윕)로
+glibc malloc과 비교·분석하고, workload 특화 최적화를 진행한다.
 
-### 의존성 준비
-`vendor/`는 git에 포함되지 않는다. 아래 커밋으로 clone해야 결과가 재현된다:
-```sh
-git clone https://github.com/tree-sitter/tree-sitter vendor/tree-sitter
-git -C vendor/tree-sitter checkout 9fc2f486a8c1e1f5a4b1954cdcd240fcd09eb003
+[AllocSitter](https://github.com/c5ln/AllocSitter)
 
-git clone https://github.com/tree-sitter/tree-sitter-c vendor/tree-sitter-c
-git -C vendor/tree-sitter-c checkout b780e47fc780ddc8da13afa35a3f4ed5c157823d
-```
-파싱 대상인 Redis 소스는 `bench/redis-src/`에 포함돼 있다.
-
-### 실행
-```sh
-make bench-verify      # 정확성 게이트: invariant 검사 + 두 allocator 결과 동등성 diff
-make bench             # 게이트 통과 후 측정 (외부 반복 x 내부 반복, CPU 고정)
-make bench-plot        # 막대 차트 + min-max 에러 바 → bench/results/plots/
-make bench-sweep       # 입력 크기 스윕 (소/중/대)
-make bench-plot-sweep  # 스케일링 라인 차트 → bench/results/sweep/plots/
-```
-`bench`는 `bench-verify`에 의존한다 — 정확성 검증에 실패하면 측정이 돌지 않는다.
-allocator 버그는 크래시가 아니라 조용히 잘못된 파스 트리로 나타날 수 있어서,
-성능 수치는 정확성이 확인된 경우에만 의미가 있기 때문이다.
+이 repo는 범용 구현(위 설계 결정들)을 다루고, workload 분석과 특화 튜닝은
+allocsitter에서 이어진다.
