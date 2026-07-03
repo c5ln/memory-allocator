@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/mman.h>
 
 static void *free_head = NULL; // free list 머리
 
@@ -10,6 +11,30 @@ static void *free_head = NULL; // free list 머리
 // invariant 체크용
 static void *heap_lo = NULL;
 static void *heap_hi = NULL;
+
+// mmap 기반 arena 
+// sbrk는 프로세스에 하나뿐인 program break를 밀기 때문에 glibc 등 다른 malloc과 충돌한다.
+// mmap으로 영역을 예약하고, 그 안에서만 break를 민다. MAP_NORESERVE + 지연 커밋이라 큰 예약도 공짜다.
+#define ARENA_SIZE ((size_t)4 << 30)  // 4 GiB 가상 예약 
+static char *arena_base = NULL;   // mmap 영역 시작
+static char *arena_cur  = NULL;   // 현재 break (다음 할당 위치)
+static char *arena_end  = NULL;   // 영역 상한
+
+// sbrk 대체. n==0이면 현재 break 반환(=sbrk(0)). 실패 시 (void*)-1.
+static void *arena_extend(size_t n){
+    if(arena_base == NULL){       // 최초 1회: 영역 예약
+        void *m = mmap(NULL, ARENA_SIZE, PROT_READ|PROT_WRITE,
+                       MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
+        if(m == MAP_FAILED) return (void*)-1;
+        arena_base = arena_cur = (char*)m;
+        arena_end  = arena_base + ARENA_SIZE;
+    }
+    void *old = arena_cur;
+    if(n == 0) return old;
+    if(arena_cur + n > arena_end) return (void*)-1; // 영역 소진
+    arena_cur += n;
+    return old;
+}
 
 
 // 블록 헤더/footer에 동일한 tag(size|flag) 기록. footer 위치는 tag의 size로 계산
@@ -67,14 +92,14 @@ void *my_malloc(size_t size){
         }
         link = (void**)((char*)(*link) + 4);
     }
-    uintptr_t cur = (uintptr_t)sbrk(0);
+    uintptr_t cur = (uintptr_t)arena_extend(0);
     uintptr_t pad = ((uintptr_t)12 - cur) & 15; // 하위 4비트만 가져오기
 
      // flag 추가. LSB가 1이면 사용중
-    void *p = sbrk(need+pad);
-    
+    void *p = arena_extend(need+pad);
+
     // heap 천장 체크
-    heap_hi = sbrk(0);
+    heap_hi = arena_extend(0);
 
     if(p==(void*)(-1)){
         return NULL;
